@@ -10,9 +10,6 @@ import sys
 
 from typing import NamedTuple
 
-from readline import set_completer
-
-
 class OPatchArg(NamedTuple):
     source: str
     path: str
@@ -131,17 +128,21 @@ def read_opatch_source(src):
     return patches
 
 def check_opatch_path(oracle_home):
+    if not os.path.isdir(oracle_home):
+        print(f"error: the directory {oracle_home} does not exist")
+        return None
+
     opatch_path = os.path.join(oracle_home, "OPatch", "opatch")
 
     # 1. Check if the path exists
     if not os.path.exists(opatch_path):
-        print(f"error: the directory or file does not exist: {opatch_path}")
-        sys.exit(1)
+        print(f"error: the directory or file {opatch_path} does not exist")
+        return None
 
     # 2. Check if it is actually a file (not a directory) and is executable
     if not os.path.isfile(opatch_path) or not os.access(opatch_path, os.X_OK):
         print(f"error: {opatch_path} is not an executable file")
-        sys.exit(1)
+        return None
 
     return opatch_path
 
@@ -158,6 +159,9 @@ def run_opatch(source):
     my_env = os.environ.copy()
     my_env["ORACLE_HOME"] = source.path
     opatch = check_opatch_path(source.path)
+    if not opatch:
+        return {}
+
     opatch_arg = "lspatches" if source.lspatches else "lsinventory"
     cmd = [opatch, opatch_arg]
 
@@ -203,7 +207,10 @@ def check_release_update(first, second):
         print(f"\n{ru1}")
 
 def print_release_update(patches):
-    print("\nDatabase Release Update:")
+    if not patches:
+        return
+
+    print("Database Release Update:")
 
     for num in patches:
         if patches[num]['description'].startswith('Database Release Update'):
@@ -252,27 +259,55 @@ def compare_patches(first, second, patches1, patches2):
                 print(f"{patch_data['extra_lines']}\n")
 
     sys.exit(0)
-def prepare_patches(first, second):
+def prepare_patches(first, second, ru):
     patches1 = read_opatch_source(first)
+
+    if ru or not second:      # Only run opatch to get opatch output
+        print_release_update(patches1)
+
     if not patches1:
         sys.exit(1)
 
     if not second:      # Only run opatch to get opatch output
-        print_release_update(patches1)
         sys.exit(0)
 
+    print()
     patches2 = read_opatch_source(second)
+    if ru:
+        print_release_update(patches2)
+
     if not patches2:
         sys.exit(1)
 
+    if ru:
+        sys.exit(0)
+
     compare_patches(first, second, patches1, patches2)
+
+def check_oratab_release_update():
+    found = set()
+    with open('/etc/oratab') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            oracle_home = line.split(':')[1]
+            if oracle_home in found:
+                continue
+
+            found.add(oracle_home)
+            print(f"Checking Release Update for ORACLE_HOME: {oracle_home}")
+            patches = run_opatch(OPatchArg(source='oracle_home', path=oracle_home,
+                                          lspatches=True, lsinventory=False, output=""))
+            print_release_update(patches)
+            print()
 
 # Main function
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare two Oracle OPatch inventories.",
                                      epilog=" => Created by Andrej Simon, Oracle CSS Germany (https://github.com/asimondev)")
     parser.add_argument("-s", "--short", action="store_true", help="print less details (hide extra lines)")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1")
     parser.add_argument("--lspatches", action="store_true", help="run 'opatch lspatches'")
     parser.add_argument("--lsinventory", action="store_true", help="run 'opatch lsinventory'")
     parser.add_argument("-oh", "--oracle_home", help="ORACLE_HOME directory")
@@ -289,6 +324,10 @@ if __name__ == "__main__":
                         help="save first OPatch output to file")
     parser.add_argument("-out2", "--patch_output2",
                         help="save second OPatch output to file")
+    parser.add_argument("-ru", "--release_update", action="store_true",
+                        help="only print Release Update version")
+    parser.add_argument("--oratab", action="store_true",
+                        help="use /etc/oratab file to find ORACLE_HOME directories")
 
     args = parser.parse_args()
 
@@ -312,37 +351,63 @@ if __name__ == "__main__":
             args.oracle_home1 and not args.oracle_home2):
         parser.error("--lsinventory can only be specified with --oracle_homeX")
 
+    if args.oratab:
+        if args.release_update:
+            check_oratab_release_update()
+            sys.exit(0)
+        else:
+            parser.error("--oratab can only be specified with --release_update")
+
     if args.first_file and args.second_file:
-        prepare_patches(OPatchArg('file', args.first_file, False, False, ""),
-                        OPatchArg('file', args.second_file, False, False, ""))
+        prepare_patches(OPatchArg(source='file', path=args.first_file,
+                                  lspatches=False, lsinventory=False, output=""),
+                        OPatchArg(source='file', path=args.second_file,
+                                  lspatches=False, lsinventory=False, output=""),
+                        args.release_update)
 
     if args.oracle_home and args.first_file:
-        prepare_patches(OPatchArg('oracle_home', args.oracle_home, args.lspatches, args.lsinventory,
-                                  args.patch_output if args.patch_output else None),
-                        OPatchArg('file', args.first_file, False, False, ""))
+        prepare_patches(OPatchArg(source='oracle_home', path=args.oracle_home,
+                                  lspatches=args.lspatches, lsinventory=args.lsinventory,
+                                  output=args.patch_output if args.patch_output else None),
+                        OPatchArg(source='file', path=args.first_file,
+                                  lspatches=False, lsinventory=False, output= ""),
+                        args.release_update)
 
     if (args.oracle_home and not args.file1 and not args.file2 and
             not args.first_file and not args.second_file and
             not args.oracle_home1 and not args.oracle_home2):
-        prepare_patches(OPatchArg('oracle_home', args.oracle_home, args.lspatches, args.lsinventory,
-                                  args.patch_output if args.patch_output else None), None)
+        prepare_patches(OPatchArg(source='oracle_home', path=args.oracle_home,
+                                  lspatches=args.lspatches, lsinventory=args.lsinventory,
+                                  output=args.patch_output if args.patch_output else None),
+                        None, args.release_update)
 
-    if ((not args.file1 and not args.oracle_home1) or
-            (not args.file2 and not args.oracle_home2)):
+    if args.file1 or args.first_file:
+        file1 = OPatchArg(source='file', path=args.file1 if args.file1 else args.first_file,
+                          lspatches=False, lsinventory=False, output="")
+    elif args.oracle_home1:
+        file1 = OPatchArg(source='oracle_home', path=args.oracle_home1,
+                          lspatches=args.lspatches, lsinventory=args.lsinventory,
+                          output=args.patch_output1 if args.patch_output1 else None)
+    else:
+        file1 = None
+
+    if args.file2 or args.second_file:
+        file2 = OPatchArg(source='file', path=args.file2 if args.file2 else args.second_file,
+                          lspatches=False, lsinventory=False, output="")
+    elif args.oracle_home2:
+        file2 = OPatchArg(source='oracle_home', path=args.oracle_home2,
+                          lspatches=args.lspatches, lsinventory=args.lsinventory,
+                          output=args.patch_output2 if args.patch_output2 else None)
+    else:
+        file2 = None
+
+    if file1 is None and file2 is None:
         parser.error("either --fileX or --oracle_homeX must be specified")
 
-    if args.file1:
-        file1 = OPatchArg('file', args.file1, False, False, "")
-    else:
-        file1 = OPatchArg('oracle_home', args.oracle_home1,
-                          args.lspatches, args.lsinventory,
-                          args.patch_output1 if args.patch_output1 else None)
+    if file1 is None or file2 is None:
+        if args.release_update:
+            prepare_patches(file1 if file1 else file2, None, args.release_update)
+        else:
+            parser.error("either --fileX or --oracle_homeX must be specified")
 
-    if args.file2:
-        file2 = OPatchArg('file', args.file2, False, False, "")
-    else:
-        file2 = OPatchArg('oracle_home', args.oracle_home2,
-                          args.lspatches, args.lsinventory,
-                          args.patch_output2 if args.patch_output2 else None)
-
-    prepare_patches(file1, file2)
+    prepare_patches(file1, file2, args.release_update)

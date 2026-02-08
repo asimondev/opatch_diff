@@ -49,7 +49,10 @@ options:
                         save first OPatch output to file
   -out2 PATCH_OUTPUT2, --patch_output2 PATCH_OUTPUT2
                         save second OPatch output to file
-
+  -ru, --release_update
+                        only print Release Update version
+  --oratab              use /etc/oratab file to find ORACLE_HOME directories
+  
 => Created by Andrej Simon, Oracle CSS Germany (https://github.com/asimondev)
 ```
 
@@ -232,3 +235,35 @@ Database Release Update:
 
 ```
 
+### Get Release Update Version
+
+Sometimes you want to know the Release Update version of the local ORACLE_HOME or
+the saved OPatch output. You can use the *-ru* or *--release_update* option.
+
+```
+./opatch_diff.py -ru local/opatch_lsinventory_12.out 
+Reading patches from 'opatch lsinventory' local/opatch_lsinventory_12.out...
+Database Release Update:
+  - Database Release Update : 19.28.0.0.250715 (37960098)
+```
+
+This option together with the *--oratab* option can be used to find the Release Update 
+versions of all local ORACLE_HOMEs from the `/etc/oratab` file.
+
+```
+./opatch_diff.py -ru --oratab
+Checking Release Update for ORACLE_HOME: /u01/oracle/db19a
+Running command: /u01/oracle/db19a/OPatch/opatch lspatches
+Reading patches from 'opatch lspatches' for ORACLE_HOME: /u01/oracle/db19a...
+Database Release Update:
+  - Database Release Update : 19.24.0.0.240716 (36582781)
+
+Checking Release Update for ORACLE_HOME: /u01/oracle/db12
+error: the directory /u01/oracle/db12 does not exist
+
+Checking Release Update for ORACLE_HOME: /u01/oracle/db19b
+Running command: /u01/oracle/db19b/OPatch/opatch lspatches
+Reading patches from 'opatch lspatches' for ORACLE_HOME: /u01/oracle/db19b...
+Database Release Update:
+  - Database Release Update : 19.26.0.0.250121 (37260974)
+```
