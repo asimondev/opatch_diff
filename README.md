@@ -1,6 +1,6 @@
 # OPATCH_DIFF – Comparing Oracle OPatch Output
 
-Version: 1.0
+Version: 1.1
 
 This repository contains a Python script *opatch_diff.py* for comparing two Oracle 
 Database OPatch outputs.
