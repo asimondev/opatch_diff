@@ -305,9 +305,9 @@ def check_oratab_release_update():
 # Main function
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare two Oracle OPatch inventories.",
-                                     epilog=" => Created by Andrej Simon, Oracle CSS Germany (https://github.com/asimondev)")
+                                     epilog=" => Created by Andrej Simon, Oracle CSS Germany (https://github.com/asimondev/opatch_diff)")
     parser.add_argument("-s", "--short", action="store_true", help="print less details (hide extra lines)")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.2")
     parser.add_argument("--lspatches", action="store_true", help="run 'opatch lspatches'")
     parser.add_argument("--lsinventory", action="store_true", help="run 'opatch lsinventory'")
     parser.add_argument("-oh", "--oracle_home", help="ORACLE_HOME directory")
